@@ -1,0 +1,123 @@
+import pickle
+import json
+from pathlib import Path
+import logging
+
+from scipy.spatial import Voronoi
+import geopandas as gpd
+import pandas as pd
+from shapely import Polygon, to_geojson, union_all
+import numpy as np
+
+import milano
+
+logger = logging.getLogger()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+# stations covered by multiple lines appear with separate stops
+# aggregate them now (ideally was to be done earlier)s
+COLLAPSE_STATIONS = {
+    "LORETO M1 (M1)": "LORETO M2 (M2)",
+    "CADORNA FN M1 (M1)": "CADORNA FN M2 (M2)",
+    "DUOMO M1 (M1)": "DUOMO M3 (M3)",
+}
+if __name__ == "__main__":
+    cells = milano.get_cells()
+    cells_df = gpd.GeoDataFrame.from_dict(
+        {"from_id": cells.keys(), "cell_coord": cells.values()}
+    ).astype(dict(from_id="str[pyarrow]"))
+    bbox = Polygon(
+        [
+            [milano.MINX, milano.MINY],
+            [milano.MAXX, milano.MINY],
+            [milano.MAXX, milano.MAXY],
+            [milano.MINX, milano.MAXY],
+            [milano.MINX, milano.MINY],
+        ]
+    )
+    dfs = []
+    for fname in Path("distances_cache").glob("*.pkl"):
+        logger.info(f"Processing file {fname}")
+        travel_time_matrix = pickle.load(open(fname, "rb")).astype(
+            dict(from_id="str[pyarrow]")
+        )
+        best_options = travel_time_matrix.groupby("from_id")["travel_time"].idxmin()
+        best_options = best_options.dropna()
+        nearest_stations = travel_time_matrix.loc[best_options]
+        logger.info(f"Extracted {len(nearest_stations)} points")
+        dfs.append(nearest_stations.merge(cells_df, on="from_id"))
+    stations_with_coords = pd.concat(dfs, ignore_index=True)
+    points = [(sc.x, sc.y) for sc in stations_with_coords["cell_coord"]]
+    logger.info(
+        f"Aggregated everything in {len(points)} total. Calculating Voronoi subdivision..."
+    )
+    vor = Voronoi(points)
+    # now vor.vertices are all the vertices of voronoi triangles
+    # in this case 5068
+    # vor.ridge_vertices are the indexes of vertices, to be taken from vor.vertices
+    # in this case 10067
+    # they can be -1 for "degenerate" edges
+    # vor.ridge_points indicates for each element in ridge_vertices which original
+    # points are the on the two sides. This is also 10067
+    # vor.regions contains the indexes of the vertices for each region, -1 for infinite ones
+    # let's draw the triangles without caring about the regions
+    # vor.point_region associates each input point to the region around it
+    regions_polygons: dict[str, list[Polygon]] = dict()
+    for point_idx, r in enumerate(vor.point_region):
+        r = vor.regions[r]
+        # ignore infinite/open regions
+        if -1 in r or len(r) == 0:
+            continue
+        station_name = stations_with_coords.iloc[point_idx]["to_id"]
+        if station_name in COLLAPSE_STATIONS:
+            station_name = COLLAPSE_STATIONS[station_name]
+
+        # add again the first element to close the polygon
+        new_polygon = Polygon(np.concat([vor.vertices[r], [vor.vertices[r[0]]]]))
+        # numeric error introduce weird polygons outside the region
+        if not bbox.contains(new_polygon):
+            continue
+        if station_name not in regions_polygons:
+            regions_polygons[station_name] = []
+        regions_polygons[station_name].append(new_polygon)
+    for station_name in regions_polygons:
+        with open(f"stations_polygons/{station_name}.json", "w") as fw:
+            fw.write(to_geojson(union_all(regions_polygons[station_name]), indent=2))
+    all_stations_obj = {"type": "FeatureCollection", "features": []}
+    logger.info(
+        f"All data aggregated into {len(regions_polygons)} regions. Writing the JSON files..."
+    )
+    regions_colors: dict[str, str] = dict()
+    for station_name in regions_polygons:
+        station_color = ""
+        if station_name.endswith("(M1)"):
+            station_color = "red"
+        elif station_name.endswith("(M2)"):
+            station_color = "green"
+        elif station_name.endswith("(M3)"):
+            station_color = "yellow"
+        elif station_name.endswith("(M4)"):
+            station_color = "blue"
+        elif station_name.endswith("(M5)"):
+            station_color = "lilac"
+        else:
+            raise ValueError(f"Do not know the color for {station_name}")
+        regions_colors[station_name] = station_color
+    for station_name in regions_polygons:
+        this_station_obj = json.loads(
+            to_geojson(union_all(regions_polygons[station_name]))
+        )
+        all_stations_obj["features"].append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": station_name,
+                    "color": regions_colors[station_name],
+                },
+                "geometry": this_station_obj,
+            }
+        )
+    with open("stations_polygons/all_combined.json", "w") as fw:
+        fw.write(json.dumps(all_stations_obj, indent=2))

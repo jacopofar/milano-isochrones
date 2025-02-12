@@ -1,0 +1,20 @@
+[project]
+name = "milano-isochrones"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "duckdb>=1.2.0",
+    "polars>=1.22.0",
+    "pyarrow>=19.0.0",
+    "r5py-sampledata-helsinki>=0.1.2",
+    "r5py-sampledata-sao-paulo>=0.1.2",
+    "r5py>=0.1.2",
+    "scipy>=1.15.1",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.9.6",
+]

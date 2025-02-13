@@ -22,10 +22,12 @@ The result will be a set of pickle files stored into `distances_cache`. This ste
 the resolution is high. In my case it took 6 hours (can be parallelized and it's trivial to skip
 data already calculated, but that's not implemented).
 
-Then `uv run genrate_voronoi.py` will aggregate all the data from those pickle files and calculate
+Then `uv run generate_voronoi.py` will aggregate all the data from those pickle files and calculate
 the regions for each Metro stop, placing them in a single geoJSON file and in separate files.
 
 The line color and station names are also present in the aggregated file, to ease the representation.
+
+Additionally, you can run `uv run generate_raster.py` to generate the heatmap.
 
 ## How does it work
 

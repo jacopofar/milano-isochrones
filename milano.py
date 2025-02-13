@@ -248,8 +248,11 @@ def retrieve_all_calculated_distances() -> pd.DataFrame:
     """Retrieve the distances previously calculated and stored as Pickle.
 
     Columns:
-    cell_coord: Point with he coordinates of the cell center
-    to_id: the name/id of the nearest station
+
+    from_id      id of the starting point
+    cell_coord   Shapely Point with he coordinates of the cell center
+    to_id        the name/id of the nearest station
+    travel_time  travel time in minutes
     """
     cells = get_cells()
     cells_df = gpd.GeoDataFrame.from_dict(

@@ -3,7 +3,8 @@ from pathlib import Path
 import duckdb as ddb
 import polars as pl
 
-DECOMPRESSED_GTFS = Path('gtfs_data')
+DECOMPRESSED_GTFS = Path("gtfs_data")
+
 
 def get_metro_stops() -> pl.DataFrame:
     """Return the metro stops from the GTFS.
@@ -24,7 +25,8 @@ def get_metro_stops() -> pl.DataFrame:
     """).pl()
     # trips.txt maps a route with trip_id(s)
     # stop_times.txt maps a trip_id with a stop_id
-    return ddb.sql(f"""
+    return ddb.sql(
+        f"""
     SELECT DISTINCT
         trips.route_id,
         stop_times.stop_id,
@@ -45,5 +47,6 @@ def get_metro_stops() -> pl.DataFrame:
     ) AS stops
     ON stops.stop_id = stop_times.stop_id
     WHERE trips.route_id IN $route_ids;
-    """, params=dict(route_ids=metro_lines['route_id'].to_list())
+    """,
+        params=dict(route_ids=metro_lines["route_id"].to_list()),
     ).pl()

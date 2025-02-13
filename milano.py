@@ -1,6 +1,8 @@
 import datetime
 import json
 import logging
+import pickle
+from pathlib import Path
 import warnings
 
 import geopandas as gpd
@@ -127,6 +129,8 @@ if __name__ == "__main__":
     transport_network = TransportNetwork.from_directory("input_data")
     cells = get_cells()
     metro_stops = get_metro_stops()
+    logger.info("Extracted metro stops:")
+    logger.info(metro_stops)
     destinations = gpd.GeoDataFrame(
         {
             "id": [
@@ -238,3 +242,28 @@ if __name__ == "__main__":
             "features": [""")
         fw.write(",\n".join([json.dumps(f) for f in segments_as_features]))
         fw.write("]}")
+
+
+def retrieve_all_calculated_distances() -> pd.DataFrame:
+    """Retrieve the distances previously calculated and stored as Pickle.
+
+    Columns:
+    cell_coord: Point with he coordinates of the cell center
+    to_id: the name/id of the nearest station
+    """
+    cells = get_cells()
+    cells_df = gpd.GeoDataFrame.from_dict(
+        {"from_id": cells.keys(), "cell_coord": cells.values()}
+    ).astype(dict(from_id="str[pyarrow]"))
+    dfs = []
+    for fname in Path("distances_cache").glob("*.pkl"):
+        logger.info(f"Processing file {fname}")
+        travel_time_matrix = pickle.load(open(fname, "rb")).astype(
+            dict(from_id="str[pyarrow]")
+        )
+        best_options = travel_time_matrix.groupby("from_id")["travel_time"].idxmin()
+        best_options = best_options.dropna()
+        nearest_stations = travel_time_matrix.loc[best_options]
+        logger.info(f"Extracted {len(nearest_stations)} points")
+        dfs.append(nearest_stations.merge(cells_df, on="from_id"))
+    return pd.concat(dfs, ignore_index=True)

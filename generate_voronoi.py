@@ -1,21 +1,14 @@
-import pickle
 import json
-from pathlib import Path
 import logging
 
 from scipy.spatial import Voronoi
-import geopandas as gpd
-import pandas as pd
 from shapely import Polygon, to_geojson, union_all
 import numpy as np
 
 import milano
 
-logger = logging.getLogger()
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
+logger = logging.getLogger(__name__)
+
 # stations covered by multiple lines appear with separate stops
 # aggregate them now (ideally was to be done earlier)s
 COLLAPSE_STATIONS = {
@@ -24,10 +17,6 @@ COLLAPSE_STATIONS = {
     "DUOMO M1 (M1)": "DUOMO M3 (M3)",
 }
 if __name__ == "__main__":
-    cells = milano.get_cells()
-    cells_df = gpd.GeoDataFrame.from_dict(
-        {"from_id": cells.keys(), "cell_coord": cells.values()}
-    ).astype(dict(from_id="str[pyarrow]"))
     bbox = Polygon(
         [
             [milano.MINX, milano.MINY],
@@ -37,18 +26,7 @@ if __name__ == "__main__":
             [milano.MINX, milano.MINY],
         ]
     )
-    dfs = []
-    for fname in Path("distances_cache").glob("*.pkl"):
-        logger.info(f"Processing file {fname}")
-        travel_time_matrix = pickle.load(open(fname, "rb")).astype(
-            dict(from_id="str[pyarrow]")
-        )
-        best_options = travel_time_matrix.groupby("from_id")["travel_time"].idxmin()
-        best_options = best_options.dropna()
-        nearest_stations = travel_time_matrix.loc[best_options]
-        logger.info(f"Extracted {len(nearest_stations)} points")
-        dfs.append(nearest_stations.merge(cells_df, on="from_id"))
-    stations_with_coords = pd.concat(dfs, ignore_index=True)
+    stations_with_coords = milano.retrieve_all_calculated_distances()
     points = [(sc.x, sc.y) for sc in stations_with_coords["cell_coord"]]
     logger.info(
         f"Aggregated everything in {len(points)} total. Calculating Voronoi subdivision..."
@@ -109,6 +87,7 @@ if __name__ == "__main__":
         this_station_obj = json.loads(
             to_geojson(union_all(regions_polygons[station_name]))
         )
+        assert isinstance(all_stations_obj["features"], list)
         all_stations_obj["features"].append(
             {
                 "type": "Feature",

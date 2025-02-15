@@ -1,4 +1,5 @@
 import logging
+import json
 
 import matplotlib as mpl
 from PIL import Image, ImageDraw
@@ -17,6 +18,7 @@ MAX_SCALE_TIME = 40.0
 CELL_PIXEL_SIZE_X = RESOLUTION_X / ((milano.MAXX - milano.MINX) / milano.RESOLUTION)
 CELL_PIXEL_SIZE_Y = RESOLUTION_Y / ((milano.MAXY - milano.MINY) / milano.RESOLUTION)
 
+IMAGENAME = "heatmap.png"
 logger = logging.getLogger(__name__)
 
 
@@ -67,4 +69,18 @@ if __name__ == "__main__":
             fill=color,
         )
 
-    im.save("heatmap.png")
+    im.save(IMAGENAME)
+    # based on the specifications at
+    # https://maplibre.org/maplibre-style-spec/sources/#image
+    coordinates_clockwise = [
+        Point(milano.MINX, milano.MAXY),
+        Point(milano.MAXX, milano.MAXY),
+        Point(milano.MAXX, milano.MINY),
+        Point(milano.MINX, milano.MINY)
+    ]
+    # used to place the image on a map
+    with open(f"{IMAGENAME}.coordinates.json", "w") as fw:
+        fw.write(json.dumps([
+            [p.x, p.y]
+            for p in coordinates_clockwise
+        ], indent=2))

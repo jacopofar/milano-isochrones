@@ -16,6 +16,78 @@ COLLAPSE_STATIONS = {
     "CADORNA FN M1 (M1)": "CADORNA FN M2 (M2)",
     "DUOMO M1 (M1)": "DUOMO M3 (M3)",
 }
+
+# handmade polygon around Milan to cut of many geometries and reduce complexity
+# on the final geoJSON. Made by drawing it on geojson.io and copying the data
+# it covers the Milan city proper (comune) plus some margin
+URBAN_AREA_POLYGON = Polygon(
+    [
+        [
+            9.100515801921745,
+            45.5455167557441
+        ],
+        [
+            9.062207888287645,
+            45.516984060447925
+        ],
+        [
+            9.087815685590783,
+            45.47560988804153
+        ],
+        [
+            9.087812727224701,
+            45.46081938203761
+        ],
+        [
+            9.084282728146945,
+            45.43639822910043
+        ],
+        [
+            9.09621866507851,
+            45.412940445063015
+        ],
+        [
+            9.137006591661759,
+            45.39614314339252
+        ],
+        [
+            9.175691848973429,
+            45.39811517264238
+        ],
+        [
+            9.238646294931186,
+            45.407744335864436
+        ],
+        [
+            9.298791777942,
+            45.42551720455029
+        ],
+        [
+            9.288229251555435,
+            45.43761547988808
+        ],
+        [
+            9.306139048795416,
+            45.47585321937714
+        ],
+        [
+            9.299049031254754,
+            45.51946151209026
+        ],
+        [
+            9.279346516602999,
+            45.53914891890602
+        ],
+        [
+            9.227661809292755,
+            45.55757180067263
+        ],
+        [
+            9.100515801921745,
+            45.5455167557441
+        ]
+    ]
+)
 if __name__ == "__main__":
     bbox = Polygon(
         [
@@ -59,7 +131,8 @@ if __name__ == "__main__":
             continue
         if station_name not in regions_polygons:
             regions_polygons[station_name] = []
-        regions_polygons[station_name].append(new_polygon)
+        if URBAN_AREA_POLYGON.contains(new_polygon):
+            regions_polygons[station_name].append(new_polygon)
     for station_name in regions_polygons:
         with open(f"stations_polygons/{station_name}.json", "w") as fw:
             fw.write(to_geojson(union_all(regions_polygons[station_name]), indent=2))
@@ -83,9 +156,12 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Do not know the color for {station_name}")
         regions_colors[station_name] = station_color
-    for station_name in regions_polygons:
+    for idx, station_name in enumerate(regions_polygons):
+        # tried, the file gets 3-4 times smaller but looks bad
+        # simplified = simplify(union_all(regions_polygons[station_name]), milano.RESOLUTION/2)
+        simplified = union_all(regions_polygons[station_name])
         this_station_obj = json.loads(
-            to_geojson(union_all(regions_polygons[station_name]))
+            to_geojson(simplified)
         )
         assert isinstance(all_stations_obj["features"], list)
         all_stations_obj["features"].append(
@@ -95,6 +171,7 @@ if __name__ == "__main__":
                     "name": station_name,
                     "color": regions_colors[station_name],
                 },
+                "id": idx,
                 "geometry": this_station_obj,
             }
         )

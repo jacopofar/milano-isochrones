@@ -5,6 +5,8 @@ quickest to reach.
 "Quickest" means accounting the time to walk there or take a tram or a bus, based on public transport
 schedules and road network.
 
+![Heatmap generated with this script](/heatmap.png)
+
 Although this script has been created to process the data for Milan specifically, it should be
 trivial to adapt to other cities, you will need a GTFS file (or multiple ons) for the schedules and
 a PBF extract from OpenStreetMap for the road network.

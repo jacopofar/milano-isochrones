@@ -31,7 +31,7 @@ Additionally, you can run `uv run generate_raster.py` to generate the heatmap.
 
 ## How does it work
 
-TODO: write a detailed technical article
+[Here's a detailed article about this project](https://jacopofarina.eu/posts/calculating-reachability-metro-milan/)
 
 It uses [r5py](https://r5py.readthedocs.io), a wrapper over the routing engine developed by
 [Conveyal](https://conveyal.com/learn), to calculate the travel times between points.

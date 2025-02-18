@@ -2,10 +2,11 @@ import json
 import logging
 
 from scipy.spatial import Voronoi
-from shapely import Polygon, to_geojson, union_all
+from shapely import Point, Polygon, to_geojson, union_all
 import numpy as np
 
 import milano
+from read_gtfs import get_metro_stops
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ COLLAPSE_STATIONS = {
 # handmade polygon around Milan to cut of many geometries and reduce complexity
 # on the final geoJSON. Made by drawing it on geojson.io and copying the data
 # it covers the Milan city proper (comune) plus some margin
+# currently disabled
 URBAN_AREA_POLYGON = Polygon(
     [
         [
@@ -88,6 +90,23 @@ URBAN_AREA_POLYGON = Polygon(
         ]
     ]
 )
+
+def name_to_color(name: str) -> str:
+    if name.endswith(")"):
+        name = name.replace("(", "").replace(")", "")
+    if name.endswith("M1"):
+        return "red"
+    elif name.endswith("M2"):
+        return "green"
+    elif name.endswith("M3"):
+        return "yellow"
+    elif name.endswith("M4"):
+        return "blue"
+    elif name.endswith("M5"):
+        return "lilac"
+    else:
+        raise ValueError(f"Do not know the color for {name}")
+
 if __name__ == "__main__":
     bbox = Polygon(
         [
@@ -98,6 +117,29 @@ if __name__ == "__main__":
             [milano.MINX, milano.MINY],
         ]
     )
+    # create the geoJSON with the stations themselves
+    ms = get_metro_stops()
+    all_stations_points = {"type": "FeatureCollection", "features": []}
+    assert isinstance(all_stations_points["features"], list)
+
+    for sid, row in enumerate(ms.iter_rows(named=True)):
+        this_station_obj = json.loads(
+            to_geojson(Point(row["stop_lon"], row["stop_lat"]))
+        )
+        all_stations_points["features"].append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "name": row["stop_id"],
+                        "color": name_to_color(row["route_id"]),
+                    },
+                    "id": sid,
+                    "geometry": this_station_obj,
+                }
+            )
+    with open("stations_polygons/station_points.json", "w") as fw:
+        fw.write(json.dumps(all_stations_points, indent=2))
+
     stations_with_coords = milano.retrieve_all_calculated_distances()
     points = [(sc.x, sc.y) for sc in stations_with_coords["cell_coord"]]
     logger.info(
@@ -111,7 +153,8 @@ if __name__ == "__main__":
     # they can be -1 for "degenerate" edges
     # vor.ridge_points indicates for each element in ridge_vertices which original
     # points are the on the two sides. This is also 10067
-    # vor.regions contains the indexes of the vertices for each region, -1 for infinite ones
+    # vor.regions contains the indexes of the vertices for each region,
+    # -1 for infinite ones
     # let's draw the triangles without caring about the regions
     # vor.point_region associates each input point to the region around it
     regions_polygons: dict[str, list[Polygon]] = dict()
@@ -125,40 +168,42 @@ if __name__ == "__main__":
             station_name = COLLAPSE_STATIONS[station_name]
 
         # add again the first element to close the polygon
-        new_polygon = Polygon(np.concat([vor.vertices[r], [vor.vertices[r[0]]]]))
+        new_polygon = Polygon(
+            np.concat([
+                vor.vertices[r],
+                [vor.vertices[r[0]]],
+            ])
+        )
         # numeric error introduce weird polygons outside the region
         if not bbox.contains(new_polygon):
             continue
         if station_name not in regions_polygons:
             regions_polygons[station_name] = []
-        if URBAN_AREA_POLYGON.contains(new_polygon):
-            regions_polygons[station_name].append(new_polygon)
+        # disabled for now, a rectangle looks better
+        # if URBAN_AREA_POLYGON.contains(new_polygon):
+        regions_polygons[station_name].append(new_polygon)
     for station_name in regions_polygons:
         with open(f"stations_polygons/{station_name}.json", "w") as fw:
-            fw.write(to_geojson(union_all(regions_polygons[station_name]), indent=2))
+            fw.write(
+                to_geojson(
+                    union_all(regions_polygons[station_name]),
+                    indent=2,
+                )
+            )
     all_stations_obj = {"type": "FeatureCollection", "features": []}
     logger.info(
-        f"All data aggregated into {len(regions_polygons)} regions. Writing the JSON files..."
+        f"All data aggregated into {len(regions_polygons)} regions."
+        "Writing the JSON files..."
     )
     regions_colors: dict[str, str] = dict()
     for station_name in regions_polygons:
-        station_color = ""
-        if station_name.endswith("(M1)"):
-            station_color = "red"
-        elif station_name.endswith("(M2)"):
-            station_color = "green"
-        elif station_name.endswith("(M3)"):
-            station_color = "yellow"
-        elif station_name.endswith("(M4)"):
-            station_color = "blue"
-        elif station_name.endswith("(M5)"):
-            station_color = "lilac"
-        else:
-            raise ValueError(f"Do not know the color for {station_name}")
-        regions_colors[station_name] = station_color
+        regions_colors[station_name] = name_to_color(station_name)
     for idx, station_name in enumerate(regions_polygons):
         # tried, the file gets 3-4 times smaller but looks bad
-        # simplified = simplify(union_all(regions_polygons[station_name]), milano.RESOLUTION/2)
+        # simplified = simplify(
+        #   union_all(regions_polygons[station_name]),
+        #   milano.RESOLUTION/2,
+        # )
         simplified = union_all(regions_polygons[station_name])
         this_station_obj = json.loads(
             to_geojson(simplified)
